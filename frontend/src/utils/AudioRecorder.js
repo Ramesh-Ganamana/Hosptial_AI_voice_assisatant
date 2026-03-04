@@ -59,13 +59,14 @@ class AudioRecorder {
     const dataArray = new Uint8Array(bufferLength);
 
     let silenceStart = null;
-    const SILENCE_THRESHOLD = 20; // Adjust based on testing
-    const SILENCE_DURATION = 3000; // 3 seconds of silence
+    const SILENCE_THRESHOLD = 25; // Threshold for detecting silence (higher = more sensitive)
+    const SILENCE_DURATION = 5000; // 5 seconds of CONTINUOUS silence
+    const CHECK_INTERVAL = 100; // Check every 100ms
 
     this.silenceDetectionInterval = setInterval(() => {
       this.analyser.getByteTimeDomainData(dataArray);
 
-      // Calculate average volume
+      // Calculate average audio level
       let sum = 0;
       for (let i = 0; i < bufferLength; i++) {
         const value = Math.abs(dataArray[i] - 128);
@@ -73,20 +74,30 @@ class AudioRecorder {
       }
       const average = sum / bufferLength;
 
-      // Check for silence
+      // Check if user is speaking or silent
       if (average < SILENCE_THRESHOLD) {
+        // Silent - start or continue counting
         if (!silenceStart) {
           silenceStart = Date.now();
-        } else if (Date.now() - silenceStart > SILENCE_DURATION) {
-          // Silence detected for long enough
-          if (this.silenceCallback) {
-            this.silenceCallback();
+          console.log('Silence detected, starting timer...');
+        } else {
+          const silenceDuration = Date.now() - silenceStart;
+          if (silenceDuration > SILENCE_DURATION) {
+            // CONTINUOUS silence for 5 seconds - auto-stop
+            console.log(`Auto-stopping: ${silenceDuration}ms of continuous silence`);
+            if (this.silenceCallback) {
+              this.silenceCallback();
+            }
           }
         }
       } else {
-        silenceStart = null;
+        // User is speaking - RESET the silence timer
+        if (silenceStart) {
+          console.log('Voice detected, resetting silence timer');
+        }
+        silenceStart = null; // Reset timer when voice detected
       }
-    }, 100);
+    }, CHECK_INTERVAL);
   }
 
   onSilenceDetected(callback) {

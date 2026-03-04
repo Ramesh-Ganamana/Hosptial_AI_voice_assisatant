@@ -294,7 +294,7 @@ function App() {
               {/* Hint Text */}
               {!isRecording && !isProcessing && permissionState !== "denied" && (
                 <p className="text-sm text-gray-500">
-                  Recording will auto-stop after 3 seconds of silence
+                  Recording will auto-stop after 5 seconds of continuous silence
                 </p>
               )}
             </div>
