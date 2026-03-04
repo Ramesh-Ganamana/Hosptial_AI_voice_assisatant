@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, File, UploadFile, HTTPException
+from fastapi import FastAPI, APIRouter, File, UploadFile, HTTPException, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,14 +6,14 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 import io
 import wave
 
 # Import services
-from services.vosk_service import vosk_service
+from services.sarvam_service import sarvam_service
 from services.llm_service import llm_service
 from services.doctor_service import doctor_service
 from services.appointment_service import appointment_service
@@ -75,9 +75,12 @@ async def create_status_check(input: StatusCheckCreate):
     return status_obj
 
 @api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
+async def get_status_checks(
+    limit: int = Query(default=50, ge=1, le=100, description="Maximum number of records to return"),
+    skip: int = Query(default=0, ge=0, description="Number of records to skip")
+):
+    # Fetch status checks with pagination
+    status_checks = await db.status_checks.find({}, {"_id": 0}).skip(skip).limit(limit).to_list(length=None)
     
     # Convert ISO string timestamps back to datetime objects
     for check in status_checks:
@@ -89,10 +92,11 @@ async def get_status_checks():
 @api_router.post("/process-audio", response_model=ProcessAudioResponse)
 async def process_audio(
     audio: UploadFile = File(...),
-    session_id: str = None
+    session_id: Optional[str] = None
 ):
     """
     Process audio file: transcribe speech and generate AI response
+    Uses Sarvam AI for Indian English speech recognition
     """
     try:
         # Generate session ID if not provided
@@ -102,16 +106,10 @@ async def process_audio(
         # Read audio file
         audio_data = await audio.read()
         
-        # Extract WAV data (skip WAV header - 44 bytes)
-        if len(audio_data) > 44:
-            wav_data = audio_data[44:]
-        else:
-            wav_data = audio_data
+        logger.info(f"Processing audio: {len(audio_data)} bytes, format: {audio.content_type}")
         
-        logger.info(f"Processing audio: {len(audio_data)} bytes")
-        
-        # Transcribe audio using Vosk
-        transcription = vosk_service.transcribe_audio(wav_data)
+        # Transcribe audio using Sarvam (cloud-based, no local models needed)
+        transcription = sarvam_service.transcribe_audio(audio_data)
         
         if not transcription or transcription.strip() == "":
             return ProcessAudioResponse(
