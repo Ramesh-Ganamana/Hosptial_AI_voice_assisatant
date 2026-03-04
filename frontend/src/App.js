@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import "@/App.css";
 import axios from "axios";
 import AudioRecorder from "@/utils/AudioRecorder";
+import TextToSpeech from "@/utils/TextToSpeech";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Mic, Square, Loader2, AlertCircle, Hospital } from "lucide-react";
+import { Mic, Square, Loader2, AlertCircle, Hospital, Volume2, VolumeX } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -17,13 +18,19 @@ function App() {
   const [permissionState, setPermissionState] = useState("prompt"); // prompt, granted, denied
   const [error, setError] = useState(null);
   const [sessionId, setSessionId] = useState(null);
+  const [autoSpeak, setAutoSpeak] = useState(true); // Auto-speak AI responses
+  const [isSpeaking, setIsSpeaking] = useState(false);
   
   const audioRecorderRef = useRef(null);
+  const ttsRef = useRef(null);
   const conversationEndRef = useRef(null);
 
   useEffect(() => {
     // Generate session ID
     setSessionId(`session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    
+    // Initialize Text-to-Speech
+    ttsRef.current = new TextToSpeech();
     
     // Check microphone permission status
     checkMicrophonePermission();
@@ -143,6 +150,11 @@ function App() {
           { type: "user", text: transcription },
           { type: "assistant", text: aiResponse }
         ]);
+        
+        // Auto-speak the AI response if enabled
+        if (autoSpeak && aiResponse) {
+          speakText(aiResponse);
+        }
       } else {
         setError("Couldn't understand the audio. Please speak clearly and try again.");
       }
@@ -160,6 +172,37 @@ function App() {
     );
   };
 
+  const speakText = async (text) => {
+    try {
+      setIsSpeaking(true);
+      await ttsRef.current.speak(text, {
+        rate: 1.0,
+        pitch: 1.0,
+        volume: 1.0,
+        onEnd: () => setIsSpeaking(false),
+        onError: () => setIsSpeaking(false)
+      });
+    } catch (error) {
+      console.error("Error speaking text:", error);
+      setIsSpeaking(false);
+    }
+  };
+
+  const stopSpeaking = () => {
+    if (ttsRef.current) {
+      ttsRef.current.stop();
+      setIsSpeaking(false);
+    }
+  };
+
+  const toggleAutoSpeak = () => {
+    setAutoSpeak(!autoSpeak);
+    // Stop any ongoing speech when disabling
+    if (autoSpeak && isSpeaking) {
+      stopSpeaking();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -173,6 +216,37 @@ function App() {
           <p className="text-gray-600">
             Speak naturally to check doctor availability and book appointments
           </p>
+          
+          {/* TTS Toggle */}
+          <div className="flex items-center justify-center mt-4 gap-2">
+            <Button
+              onClick={toggleAutoSpeak}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              {autoSpeak ? (
+                <>
+                  <Volume2 className="w-4 h-4" />
+                  Voice Responses ON
+                </>
+              ) : (
+                <>
+                  <VolumeX className="w-4 h-4" />
+                  Voice Responses OFF
+                </>
+              )}
+            </Button>
+            {isSpeaking && (
+              <Button
+                onClick={stopSpeaking}
+                variant="destructive"
+                size="sm"
+              >
+                Stop Speaking
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Main Card */}
@@ -207,7 +281,12 @@ function App() {
                           : "bg-white text-gray-800 border border-gray-200"
                       }`}
                     >
-                      <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                      <div className="flex items-start gap-2">
+                        {message.type === "assistant" && autoSpeak && (
+                          <Volume2 className="w-4 h-4 mt-1 flex-shrink-0 text-blue-600" />
+                        )}
+                        <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -293,9 +372,17 @@ function App() {
 
               {/* Hint Text */}
               {!isRecording && !isProcessing && permissionState !== "denied" && (
-                <p className="text-sm text-gray-500">
-                  Recording will auto-stop after 5 seconds of continuous silence
-                </p>
+                <div className="text-center space-y-1">
+                  <p className="text-sm text-gray-500">
+                    Recording will auto-stop after 5 seconds of continuous silence
+                  </p>
+                  {autoSpeak && (
+                    <p className="text-xs text-blue-600 flex items-center justify-center gap-1">
+                      <Volume2 className="w-3 h-3" />
+                      AI will speak responses back to you
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </div>
