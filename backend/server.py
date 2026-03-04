@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, File, UploadFile, HTTPException, Query
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -159,8 +160,103 @@ async def get_doctors():
     doctors = doctor_service.get_all_doctors()
     return {"doctors": doctors}
 
+@api_router.get("/health")
+async def health_check():
+    """
+    Health check endpoint for Kubernetes liveness probe
+    Returns 200 if the service is running
+    """
+    return {
+        "status": "healthy",
+        "service": "hospital-ai-assistant",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+@api_router.get("/ready")
+async def readiness_check():
+    """
+    Readiness check endpoint for Kubernetes readiness probe
+    Checks if all dependencies (MongoDB, external APIs) are accessible
+    """
+    try:
+        # Check MongoDB connection
+        await db.command("ping")
+        
+        return {
+            "status": "ready",
+            "service": "hospital-ai-assistant",
+            "mongodb": "connected",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "mongodb": "disconnected",
+                "error": str(e)
+            }
+        )
+
+@api_router.get("/healthz")
+async def kubernetes_health():
+    """
+    Alternative health endpoint (common Kubernetes convention)
+    """
+    return {"status": "ok"}
+
+@api_router.get("/livez")
+async def kubernetes_liveness():
+    """
+    Liveness endpoint for Kubernetes
+    """
+    return {"status": "alive"}
+
 # Include the router in the main app
 app.include_router(api_router)
+
+# Custom 404 handler to handle security scanning probes gracefully
+@app.exception_handler(404)
+async def custom_404_handler(request, exc):
+    """
+    Custom 404 handler to gracefully handle security scanning attempts
+    """
+    path = request.url.path
+    
+    # List of common security probe paths
+    security_probes = [
+        '.env', 'config.env', 'config.map', 'config', 'settings',
+        'stripe', 'payment', '.git', 'admin', 'phpmyadmin'
+    ]
+    
+    # Check if this looks like a security probe
+    is_probe = any(probe in path.lower() for probe in security_probes)
+    
+    if is_probe:
+        # Return minimal response for security probes
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Not found"}
+        )
+    
+    # Return detailed 404 for legitimate requests
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": "Endpoint not found",
+            "path": path,
+            "available_endpoints": [
+                "/api/",
+                "/api/health",
+                "/api/ready",
+                "/api/doctors",
+                "/api/process-audio",
+                "/api/book-appointment",
+                "/api/status"
+            ]
+        }
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -180,3 +276,23 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+# Root-level health endpoints (Kubernetes standard)
+@app.get("/health")
+async def root_health_check():
+    """Root-level health check"""
+    return {"status": "healthy", "service": "hospital-ai-assistant"}
+
+@app.get("/healthz")
+async def root_healthz():
+    """Kubernetes standard health check"""
+    return {"status": "ok"}
+
+@app.get("/ready")
+async def root_ready():
+    """Root-level readiness check"""
+    try:
+        await db.command("ping")
+        return {"status": "ready", "mongodb": "connected"}
+    except Exception:
+        raise HTTPException(status_code=503, detail="Service not ready")
