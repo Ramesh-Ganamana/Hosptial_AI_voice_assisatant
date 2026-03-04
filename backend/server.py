@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, File, UploadFile, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -9,6 +9,14 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List
 import uuid
 from datetime import datetime, timezone
+import io
+import wave
+
+# Import services
+from services.vosk_service import vosk_service
+from services.llm_service import llm_service
+from services.doctor_service import doctor_service
+from services.appointment_service import appointment_service
 
 
 ROOT_DIR = Path(__file__).parent
@@ -37,10 +45,22 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
+class ProcessAudioResponse(BaseModel):
+    transcription: str
+    response: str
+    session_id: str
+
+class BookAppointmentRequest(BaseModel):
+    patient_name: str
+    doctor_id: str
+    doctor_name: str
+    date: str
+    time: str
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Hospital AI Assistant API"}
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
@@ -65,6 +85,81 @@ async def get_status_checks():
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
     
     return status_checks
+
+@api_router.post("/process-audio", response_model=ProcessAudioResponse)
+async def process_audio(
+    audio: UploadFile = File(...),
+    session_id: str = None
+):
+    """
+    Process audio file: transcribe speech and generate AI response
+    """
+    try:
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        
+        # Read audio file
+        audio_data = await audio.read()
+        
+        # Extract WAV data (skip WAV header - 44 bytes)
+        if len(audio_data) > 44:
+            wav_data = audio_data[44:]
+        else:
+            wav_data = audio_data
+        
+        logger.info(f"Processing audio: {len(audio_data)} bytes")
+        
+        # Transcribe audio using Vosk
+        transcription = vosk_service.transcribe_audio(wav_data)
+        
+        if not transcription or transcription.strip() == "":
+            return ProcessAudioResponse(
+                transcription="",
+                response="I didn't catch that. Could you please speak again?",
+                session_id=session_id
+            )
+        
+        logger.info(f"Transcription: {transcription}")
+        
+        # Get AI response using LLM
+        ai_response = await llm_service.process_message(session_id, transcription)
+        
+        return ProcessAudioResponse(
+            transcription=transcription,
+            response=ai_response,
+            session_id=session_id
+        )
+    
+    except Exception as e:
+        logger.error(f"Error processing audio: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/book-appointment")
+async def book_appointment(request: BookAppointmentRequest):
+    """Book an appointment"""
+    try:
+        appointment = appointment_service.book_appointment(
+            patient_name=request.patient_name,
+            doctor_id=request.doctor_id,
+            doctor_name=request.doctor_name,
+            date=request.date,
+            time=request.time
+        )
+        return {
+            "success": True,
+            "message": "Appointment booked successfully",
+            "appointment": appointment
+        }
+    except Exception as e:
+        logger.error(f"Error booking appointment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/doctors")
+async def get_doctors():
+    """Get all doctors"""
+    doctors = doctor_service.get_all_doctors()
+    return {"doctors": doctors}
 
 # Include the router in the main app
 app.include_router(api_router)

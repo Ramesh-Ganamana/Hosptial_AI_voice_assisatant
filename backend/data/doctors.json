@@ -1,0 +1,44 @@
+[
+  {
+    "id": "doc001",
+    "name": "Dr. Rajesh Kumar",
+    "specialty": "Cardiology",
+    "available_days": ["Monday", "Wednesday", "Friday"],
+    "available_times": ["09:00 AM - 12:00 PM", "02:00 PM - 05:00 PM"]
+  },
+  {
+    "id": "doc002",
+    "name": "Dr. Priya Sharma",
+    "specialty": "Pediatrics",
+    "available_days": ["Tuesday", "Thursday", "Saturday"],
+    "available_times": ["10:00 AM - 01:00 PM", "03:00 PM - 06:00 PM"]
+  },
+  {
+    "id": "doc003",
+    "name": "Dr. Amit Patel",
+    "specialty": "Orthopedics",
+    "available_days": ["Monday", "Tuesday", "Thursday"],
+    "available_times": ["08:00 AM - 11:00 AM", "01:00 PM - 04:00 PM"]
+  },
+  {
+    "id": "doc004",
+    "name": "Dr. Sunita Reddy",
+    "specialty": "Dermatology",
+    "available_days": ["Wednesday", "Friday", "Saturday"],
+    "available_times": ["09:00 AM - 12:00 PM", "02:00 PM - 05:00 PM"]
+  },
+  {
+    "id": "doc005",
+    "name": "Dr. Vikram Singh",
+    "specialty": "General Medicine",
+    "available_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+    "available_times": ["09:00 AM - 01:00 PM", "02:00 PM - 06:00 PM"]
+  },
+  {
+    "id": "doc006",
+    "name": "Dr. Meera Iyer",
+    "specialty": "Gynecology",
+    "available_days": ["Tuesday", "Thursday", "Saturday"],
+    "available_times": ["10:00 AM - 01:00 PM", "03:00 PM - 06:00 PM"]
+  }
+]
