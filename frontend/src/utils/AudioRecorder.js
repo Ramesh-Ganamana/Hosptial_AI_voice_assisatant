@@ -60,7 +60,7 @@ class AudioRecorder {
 
     let silenceStart = null;
     const SILENCE_THRESHOLD = 25; // Threshold for detecting silence (higher = more sensitive)
-    const SILENCE_DURATION = 5000; // 5 seconds of CONTINUOUS silence
+    const SILENCE_DURATION = 10000; // 10 seconds of CONTINUOUS silence (hospital assistant requirement)
     const CHECK_INTERVAL = 100; // Check every 100ms
 
     this.silenceDetectionInterval = setInterval(() => {
@@ -74,26 +74,26 @@ class AudioRecorder {
       }
       const average = sum / bufferLength;
 
-      // Check if user is speaking or silent
+      // Check if caller is speaking or silent
       if (average < SILENCE_THRESHOLD) {
         // Silent - start or continue counting
         if (!silenceStart) {
           silenceStart = Date.now();
-          console.log('Silence detected, starting timer...');
+          console.log('Silence detected, starting 10-second timer...');
         } else {
           const silenceDuration = Date.now() - silenceStart;
           if (silenceDuration > SILENCE_DURATION) {
-            // CONTINUOUS silence for 5 seconds - auto-stop
-            console.log(`Auto-stopping: ${silenceDuration}ms of continuous silence`);
+            // CONTINUOUS silence for 10 seconds - caller has finished speaking
+            console.log(`Caller finished: ${silenceDuration}ms of continuous silence`);
             if (this.silenceCallback) {
               this.silenceCallback();
             }
           }
         }
       } else {
-        // User is speaking - RESET the silence timer
+        // Caller is speaking - RESET the silence timer
         if (silenceStart) {
-          console.log('Voice detected, resetting silence timer');
+          console.log('Caller speaking, resetting 10-second timer');
         }
         silenceStart = null; // Reset timer when voice detected
       }
