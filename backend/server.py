@@ -15,9 +15,12 @@ import wave
 
 # Import services
 from services.sarvam_service import sarvam_service
-from services.llm_service import llm_service
+from services.llm_service_db import LLMServiceDB
 from services.doctor_service import doctor_service
 from services.appointment_service import appointment_service
+from services.db_init_service import initialize_database
+from services.slot_service import SlotGenerationService
+from services.appointment_service_db import AppointmentServiceDB
 
 
 ROOT_DIR = Path(__file__).parent
@@ -27,6 +30,11 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+# Initialize services
+slot_service = SlotGenerationService(db)
+appointment_service_db = AppointmentServiceDB(db)
+llm_service_db = LLMServiceDB(db)
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -121,8 +129,8 @@ async def process_audio(
         
         logger.info(f"Transcription: {transcription}")
         
-        # Get AI response using LLM
-        ai_response = await llm_service.process_message(session_id, transcription)
+        # Get AI response using enhanced LLM with database context
+        ai_response = await llm_service_db.process_message(session_id, transcription)
         
         return ProcessAudioResponse(
             transcription=transcription,
@@ -156,9 +164,74 @@ async def book_appointment(request: BookAppointmentRequest):
 
 @api_router.get("/doctors")
 async def get_doctors():
-    """Get all doctors"""
-    doctors = doctor_service.get_all_doctors()
-    return {"doctors": doctors}
+    """Get all doctors from database"""
+    try:
+        doctors = await db.doctors.find(
+            {"active_status": True},
+            {"_id": 0}
+        ).to_list(length=None)
+        return {"doctors": doctors}
+    except Exception as e:
+        logger.error(f"Error fetching doctors: {e}")
+        return {"doctors": []}
+
+@api_router.get("/doctors/by-department/{department_id}")
+async def get_doctors_by_department(department_id: str):
+    """Get doctors by department"""
+    try:
+        doctors = await db.doctors.find(
+            {"department_id": department_id, "active_status": True},
+            {"_id": 0}
+        ).to_list(length=None)
+        return {"doctors": doctors}
+    except Exception as e:
+        logger.error(f"Error fetching doctors: {e}")
+        return {"doctors": []}
+
+@api_router.get("/departments")
+async def get_departments():
+    """Get all departments"""
+    try:
+        departments = await db.departments.find({}, {"_id": 0}).to_list(length=None)
+        return {"departments": departments}
+    except Exception as e:
+        logger.error(f"Error fetching departments: {e}")
+        return {"departments": []}
+
+@api_router.get("/appointments/availability")
+async def check_availability(
+    doctor_id: str = Query(..., description="Doctor ID"),
+    date: str = Query(..., description="Date in YYYY-MM-DD format")
+):
+    """Check available slots for a doctor on a specific date"""
+    try:
+        availability = await slot_service.get_available_slots(doctor_id, date)
+        return availability
+    except Exception as e:
+        logger.error(f"Error checking availability: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/appointments/book")
+async def book_appointment_v2(
+    doctor_id: str,
+    patient_name: str,
+    appointment_date: str,
+    start_time: str,
+    appointment_type: str = "Consultation"
+):
+    """Book an appointment with concurrency control"""
+    try:
+        result = await appointment_service_db.book_appointment(
+            doctor_id=doctor_id,
+            patient_name=patient_name,
+            appointment_date=appointment_date,
+            start_time=start_time,
+            appointment_type=appointment_type
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error booking appointment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/health")
 async def health_check():
@@ -272,6 +345,15 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+@app.on_event("startup")
+async def startup_db_client():
+    """Initialize database on startup"""
+    try:
+        await initialize_database(db)
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing database: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
