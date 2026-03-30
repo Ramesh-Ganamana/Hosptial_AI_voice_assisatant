@@ -48,82 +48,14 @@ class AudioRecorder {
   }
 
   setupSilenceDetection() {
-    // Create audio context for silence detection
-    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const source = this.audioContext.createMediaStreamSource(this.stream);
-    this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.95; // Maximum smoothing
-    source.connect(this.analyser);
-
-    const bufferLength = this.analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    let silenceStart = null;
-    let recordingStartTime = Date.now();
-    let consecutiveSilenceChecks = 0;
+    // SILENCE DETECTION DISABLED
+    // User must manually click "Stop" button to end recording
+    // This is more reliable than auto-detection
+    console.log('⚠️ Auto-silence detection DISABLED - use Stop button to finish');
     
-    // EXTREMELY CONSERVATIVE - Will almost never auto-stop
-    const SILENCE_THRESHOLD = 50; // VERY high threshold
-    const SILENCE_DURATION = 10000; // 10 seconds
-    const CHECK_INTERVAL = 500; // Check less frequently (every 0.5 seconds)
-    const MIN_RECORDING_TIME = 5000; // Must record at least 5 seconds
-    const REQUIRED_SILENT_CHECKS = 3; // Must have 3 consecutive silent checks
-
-    this.silenceDetectionInterval = setInterval(() => {
-      // Don't check for silence until minimum recording time
-      if (Date.now() - recordingStartTime < MIN_RECORDING_TIME) {
-        return;
-      }
-
-      this.analyser.getByteTimeDomainData(dataArray);
-
-      // Calculate audio levels
-      let sum = 0;
-      let maxVolume = 0;
-      let aboveThresholdCount = 0;
-      
-      for (let i = 0; i < bufferLength; i++) {
-        const value = Math.abs(dataArray[i] - 128);
-        sum += value;
-        if (value > maxVolume) maxVolume = value;
-        if (value > SILENCE_THRESHOLD) aboveThresholdCount++;
-      }
-      const average = sum / bufferLength;
-
-      // VERY STRICT: All conditions must be met
-      const isDefinitelySilent = (
-        average < SILENCE_THRESHOLD &&
-        maxVolume < SILENCE_THRESHOLD &&
-        aboveThresholdCount < (bufferLength * 0.01) // Less than 1% above threshold
-      );
-
-      if (isDefinitelySilent) {
-        consecutiveSilenceChecks++;
-        
-        if (consecutiveSilenceChecks >= REQUIRED_SILENT_CHECKS) {
-          if (!silenceStart) {
-            silenceStart = Date.now();
-            console.log('🤐 ABSOLUTE silence detected - starting 10-second timer');
-          } else {
-            const silenceDuration = Date.now() - silenceStart;
-            if (silenceDuration > SILENCE_DURATION) {
-              console.log(`✅ 10 seconds of absolute silence - auto-stopping`);
-              if (this.silenceCallback) {
-                this.silenceCallback();
-              }
-            }
-          }
-        }
-      } else {
-        // ANY sound - reset everything
-        if (consecutiveSilenceChecks > 0 || silenceStart) {
-          console.log(`🗣️ Voice/sound detected - resetting (avg: ${average.toFixed(1)}, max: ${maxVolume})`);
-        }
-        silenceStart = null;
-        consecutiveSilenceChecks = 0;
-      }
-    }, CHECK_INTERVAL);
+    // Keep this function but don't do anything
+    // Recording will only stop when user clicks Stop button
+    this.silenceDetectionInterval = null;
   }
 
   onSilenceDetected(callback) {
