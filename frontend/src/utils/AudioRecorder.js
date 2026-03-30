@@ -53,38 +53,52 @@ class AudioRecorder {
     const source = this.audioContext.createMediaStreamSource(this.stream);
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0.8; // Smooth out rapid changes
     source.connect(this.analyser);
 
     const bufferLength = this.analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
     let silenceStart = null;
-    const SILENCE_THRESHOLD = 25; // Threshold for detecting silence (higher = more sensitive)
-    const SILENCE_DURATION = 10000; // 10 seconds of CONTINUOUS silence (hospital assistant requirement)
-    const CHECK_INTERVAL = 100; // Check every 100ms
+    let lastSpeechTime = Date.now();
+    
+    // ADJUSTED: More conservative threshold to avoid false silence detection
+    const SILENCE_THRESHOLD = 30; // Higher = less sensitive (was 25)
+    const SILENCE_DURATION = 7000; // 7 seconds of CONTINUOUS silence
+    const CHECK_INTERVAL = 200; // Check every 200ms (was 100ms, less frequent checks)
+    const MIN_SPEECH_VOLUME = 35; // Minimum to be considered speech
 
     this.silenceDetectionInterval = setInterval(() => {
       this.analyser.getByteTimeDomainData(dataArray);
 
       // Calculate average audio level
       let sum = 0;
+      let maxVolume = 0;
       for (let i = 0; i < bufferLength; i++) {
         const value = Math.abs(dataArray[i] - 128);
         sum += value;
+        if (value > maxVolume) maxVolume = value;
       }
       const average = sum / bufferLength;
 
       // Check if caller is speaking or silent
-      if (average < SILENCE_THRESHOLD) {
+      // Use BOTH average and max volume for better detection
+      const isSpeaking = average > SILENCE_THRESHOLD || maxVolume > MIN_SPEECH_VOLUME;
+
+      if (!isSpeaking) {
         // Silent - start or continue counting
         if (!silenceStart) {
           silenceStart = Date.now();
-          console.log('Silence detected, starting 10-second timer...');
+          console.log('🤐 Silence detected, starting 7-second timer...');
         } else {
           const silenceDuration = Date.now() - silenceStart;
-          if (silenceDuration > SILENCE_DURATION) {
-            // CONTINUOUS silence for 10 seconds - caller has finished speaking
-            console.log(`Caller finished: ${silenceDuration}ms of continuous silence`);
+          const timeSinceLastSpeech = Date.now() - lastSpeechTime;
+          
+          // Only trigger if BOTH conditions met:
+          // 1. Silence timer > 7 seconds
+          // 2. At least 7 seconds since last speech detected
+          if (silenceDuration > SILENCE_DURATION && timeSinceLastSpeech > SILENCE_DURATION) {
+            console.log(`✅ Caller finished: ${silenceDuration}ms of continuous silence`);
             if (this.silenceCallback) {
               this.silenceCallback();
             }
@@ -93,9 +107,11 @@ class AudioRecorder {
       } else {
         // Caller is speaking - RESET the silence timer
         if (silenceStart) {
-          console.log('Caller speaking, resetting 10-second timer');
+          const wasSilentFor = Date.now() - silenceStart;
+          console.log(`🗣️ Caller speaking, resetting timer (was silent for ${wasSilentFor}ms)`);
         }
         silenceStart = null; // Reset timer when voice detected
+        lastSpeechTime = Date.now(); // Track last time we heard speech
       }
     }, CHECK_INTERVAL);
   }
