@@ -53,22 +53,27 @@ class AudioRecorder {
     const source = this.audioContext.createMediaStreamSource(this.stream);
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.8; // Smooth out rapid changes
+    this.analyser.smoothingTimeConstant = 0.9; // Very high smoothing
     source.connect(this.analyser);
 
     const bufferLength = this.analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
     let silenceStart = null;
-    let lastSpeechTime = Date.now();
+    let recordingStartTime = Date.now();
     
-    // ADJUSTED: More conservative threshold to avoid false silence detection
-    const SILENCE_THRESHOLD = 30; // Higher = less sensitive (was 25)
-    const SILENCE_DURATION = 7000; // 7 seconds of CONTINUOUS silence
-    const CHECK_INTERVAL = 200; // Check every 200ms (was 100ms, less frequent checks)
-    const MIN_SPEECH_VOLUME = 35; // Minimum to be considered speech
+    // MUCH MORE CONSERVATIVE - Will NOT trigger early
+    const SILENCE_THRESHOLD = 40; // Very high - almost no sound
+    const SILENCE_DURATION = 7000; // 7 seconds
+    const CHECK_INTERVAL = 300; // Check less frequently
+    const MIN_RECORDING_TIME = 3000; // Must record at least 3 seconds before silence detection starts
 
     this.silenceDetectionInterval = setInterval(() => {
+      // Don't even check for silence until minimum recording time has passed
+      if (Date.now() - recordingStartTime < MIN_RECORDING_TIME) {
+        return; // Keep recording, ignore silence
+      }
+
       this.analyser.getByteTimeDomainData(dataArray);
 
       // Calculate average audio level
@@ -81,37 +86,28 @@ class AudioRecorder {
       }
       const average = sum / bufferLength;
 
-      // Check if caller is speaking or silent
-      // Use BOTH average and max volume for better detection
-      const isSpeaking = average > SILENCE_THRESHOLD || maxVolume > MIN_SPEECH_VOLUME;
+      // Very strict: BOTH average AND max must be below threshold
+      const isDefinitelySilent = average < SILENCE_THRESHOLD && maxVolume < SILENCE_THRESHOLD;
 
-      if (!isSpeaking) {
-        // Silent - start or continue counting
+      if (isDefinitelySilent) {
         if (!silenceStart) {
           silenceStart = Date.now();
-          console.log('🤐 Silence detected, starting 7-second timer...');
+          console.log('🤐 Complete silence detected, starting 7-second timer...');
         } else {
           const silenceDuration = Date.now() - silenceStart;
-          const timeSinceLastSpeech = Date.now() - lastSpeechTime;
-          
-          // Only trigger if BOTH conditions met:
-          // 1. Silence timer > 7 seconds
-          // 2. At least 7 seconds since last speech detected
-          if (silenceDuration > SILENCE_DURATION && timeSinceLastSpeech > SILENCE_DURATION) {
-            console.log(`✅ Caller finished: ${silenceDuration}ms of continuous silence`);
+          if (silenceDuration > SILENCE_DURATION) {
+            console.log(`✅ 7 seconds of complete silence - stopping now`);
             if (this.silenceCallback) {
               this.silenceCallback();
             }
           }
         }
       } else {
-        // Caller is speaking - RESET the silence timer
+        // ANY sound detected - reset
         if (silenceStart) {
-          const wasSilentFor = Date.now() - silenceStart;
-          console.log(`🗣️ Caller speaking, resetting timer (was silent for ${wasSilentFor}ms)`);
+          console.log(`🗣️ Sound detected - resetting timer`);
         }
-        silenceStart = null; // Reset timer when voice detected
-        lastSpeechTime = Date.now(); // Track last time we heard speech
+        silenceStart = null;
       }
     }, CHECK_INTERVAL);
   }
