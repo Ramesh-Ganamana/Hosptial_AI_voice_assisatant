@@ -373,11 +373,11 @@ function App() {
               {/* Hint Text */}
               {!isRecording && !isProcessing && permissionState !== "denied" && (
                 <div className="text-center space-y-1">
-                  <p className="text-sm text-gray-500">
-                    Recording will auto-stop after 7 seconds of continuous silence
+                  <p className="text-sm font-semibold text-gray-700">
+                    Auto-stops after 10 seconds of complete silence
                   </p>
-                  <p className="text-xs text-gray-400">
-                    Speak freely - the timer resets whenever you talk
+                  <p className="text-xs text-blue-600 font-medium">
+                    👉 Use "Stop" button anytime to finish speaking
                   </p>
                   {autoSpeak && (
                     <p className="text-xs text-blue-600 flex items-center justify-center gap-1">

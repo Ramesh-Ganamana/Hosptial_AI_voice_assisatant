@@ -53,7 +53,7 @@ class AudioRecorder {
     const source = this.audioContext.createMediaStreamSource(this.stream);
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.9; // Very high smoothing
+    this.analyser.smoothingTimeConstant = 0.95; // Maximum smoothing
     source.connect(this.analyser);
 
     const bufferLength = this.analyser.frequencyBinCount;
@@ -61,53 +61,67 @@ class AudioRecorder {
 
     let silenceStart = null;
     let recordingStartTime = Date.now();
+    let consecutiveSilenceChecks = 0;
     
-    // MUCH MORE CONSERVATIVE - Will NOT trigger early
-    const SILENCE_THRESHOLD = 40; // Very high - almost no sound
-    const SILENCE_DURATION = 7000; // 7 seconds
-    const CHECK_INTERVAL = 300; // Check less frequently
-    const MIN_RECORDING_TIME = 3000; // Must record at least 3 seconds before silence detection starts
+    // EXTREMELY CONSERVATIVE - Will almost never auto-stop
+    const SILENCE_THRESHOLD = 50; // VERY high threshold
+    const SILENCE_DURATION = 10000; // 10 seconds
+    const CHECK_INTERVAL = 500; // Check less frequently (every 0.5 seconds)
+    const MIN_RECORDING_TIME = 5000; // Must record at least 5 seconds
+    const REQUIRED_SILENT_CHECKS = 3; // Must have 3 consecutive silent checks
 
     this.silenceDetectionInterval = setInterval(() => {
-      // Don't even check for silence until minimum recording time has passed
+      // Don't check for silence until minimum recording time
       if (Date.now() - recordingStartTime < MIN_RECORDING_TIME) {
-        return; // Keep recording, ignore silence
+        return;
       }
 
       this.analyser.getByteTimeDomainData(dataArray);
 
-      // Calculate average audio level
+      // Calculate audio levels
       let sum = 0;
       let maxVolume = 0;
+      let aboveThresholdCount = 0;
+      
       for (let i = 0; i < bufferLength; i++) {
         const value = Math.abs(dataArray[i] - 128);
         sum += value;
         if (value > maxVolume) maxVolume = value;
+        if (value > SILENCE_THRESHOLD) aboveThresholdCount++;
       }
       const average = sum / bufferLength;
 
-      // Very strict: BOTH average AND max must be below threshold
-      const isDefinitelySilent = average < SILENCE_THRESHOLD && maxVolume < SILENCE_THRESHOLD;
+      // VERY STRICT: All conditions must be met
+      const isDefinitelySilent = (
+        average < SILENCE_THRESHOLD &&
+        maxVolume < SILENCE_THRESHOLD &&
+        aboveThresholdCount < (bufferLength * 0.01) // Less than 1% above threshold
+      );
 
       if (isDefinitelySilent) {
-        if (!silenceStart) {
-          silenceStart = Date.now();
-          console.log('🤐 Complete silence detected, starting 7-second timer...');
-        } else {
-          const silenceDuration = Date.now() - silenceStart;
-          if (silenceDuration > SILENCE_DURATION) {
-            console.log(`✅ 7 seconds of complete silence - stopping now`);
-            if (this.silenceCallback) {
-              this.silenceCallback();
+        consecutiveSilenceChecks++;
+        
+        if (consecutiveSilenceChecks >= REQUIRED_SILENT_CHECKS) {
+          if (!silenceStart) {
+            silenceStart = Date.now();
+            console.log('🤐 ABSOLUTE silence detected - starting 10-second timer');
+          } else {
+            const silenceDuration = Date.now() - silenceStart;
+            if (silenceDuration > SILENCE_DURATION) {
+              console.log(`✅ 10 seconds of absolute silence - auto-stopping`);
+              if (this.silenceCallback) {
+                this.silenceCallback();
+              }
             }
           }
         }
       } else {
-        // ANY sound detected - reset
-        if (silenceStart) {
-          console.log(`🗣️ Sound detected - resetting timer`);
+        // ANY sound - reset everything
+        if (consecutiveSilenceChecks > 0 || silenceStart) {
+          console.log(`🗣️ Voice/sound detected - resetting (avg: ${average.toFixed(1)}, max: ${maxVolume})`);
         }
         silenceStart = null;
+        consecutiveSilenceChecks = 0;
       }
     }, CHECK_INTERVAL);
   }
