@@ -313,14 +313,9 @@ function App() {
               {(isRecording || isProcessing) && (
                 <div className="text-center">
                   {isRecording && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-center text-red-600 animate-pulse">
-                        <div className="w-3 h-3 bg-red-600 rounded-full mr-2"></div>
-                        <span className="font-medium">Recording... Speak now</span>
-                      </div>
-                      <p className="text-sm text-blue-600 font-semibold">
-                        👉 Click "Stop" button below when finished
-                      </p>
+                    <div className="flex items-center justify-center text-red-600 animate-pulse">
+                      <div className="w-3 h-3 bg-red-600 rounded-full mr-2"></div>
+                      <span className="font-medium">Listening... Speak freely</span>
                     </div>
                   )}
                   {isProcessing && (
@@ -377,15 +372,15 @@ function App() {
 
               {/* Hint Text */}
               {!isRecording && !isProcessing && permissionState !== "denied" && (
-                <div className="text-center space-y-2">
-                  <p className="text-lg font-bold text-gray-800">
-                    ⚠️ Manual Stop Only
+                <div className="text-center space-y-1">
+                  <p className="text-sm text-gray-700 font-medium">
+                    🎤 Telephony Mode: Talk as long as needed
                   </p>
-                  <p className="text-sm text-gray-600">
-                    Recording will continue until you click "Stop"
+                  <p className="text-xs text-gray-600">
+                    Stops only after 10 seconds of complete silence
                   </p>
-                  <p className="text-xs text-blue-600 font-medium">
-                    No automatic interruption - full control to you
+                  <p className="text-xs text-blue-600">
+                    Press F12 to see real-time silence detection logs
                   </p>
                   {autoSpeak && (
                     <p className="text-xs text-blue-600 flex items-center justify-center gap-1">

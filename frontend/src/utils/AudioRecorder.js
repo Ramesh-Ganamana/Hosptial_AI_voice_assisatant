@@ -48,14 +48,74 @@ class AudioRecorder {
   }
 
   setupSilenceDetection() {
-    // SILENCE DETECTION DISABLED
-    // User must manually click "Stop" button to end recording
-    // This is more reliable than auto-detection
-    console.log('⚠️ Auto-silence detection DISABLED - use Stop button to finish');
+    // TELEPHONY-READY SILENCE DETECTION
+    // Only stops after 10 seconds of ZERO sound
+    // Can record for hours if person keeps talking
     
-    // Keep this function but don't do anything
-    // Recording will only stop when user clicks Stop button
-    this.silenceDetectionInterval = null;
+    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = this.audioContext.createMediaStreamSource(this.stream);
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 2048;
+    source.connect(this.analyser);
+
+    const bufferLength = this.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    let silenceStart = null;
+    
+    // Simple: ANY sound above this = NOT silent
+    const SOUND_THRESHOLD = 15; // Very low - any sound above this resets timer
+    const SILENCE_DURATION = 10000; // 10 seconds of ZERO sound
+    const CHECK_INTERVAL = 250; // Check 4 times per second
+
+    console.log('🎤 Telephony silence detection active: Will stop only after 10 seconds of NO sound');
+
+    this.silenceDetectionInterval = setInterval(() => {
+      this.analyser.getByteTimeDomainData(dataArray);
+
+      // Find if there's ANY sound at all
+      let hasAnySound = false;
+      let maxLevel = 0;
+      
+      for (let i = 0; i < bufferLength; i++) {
+        const value = Math.abs(dataArray[i] - 128);
+        if (value > maxLevel) maxLevel = value;
+        if (value > SOUND_THRESHOLD) {
+          hasAnySound = true;
+          break; // Found sound, no need to check more
+        }
+      }
+
+      if (hasAnySound) {
+        // ANY sound detected - RESET timer
+        if (silenceStart) {
+          const wasSilent = ((Date.now() - silenceStart) / 1000).toFixed(1);
+          console.log(`🗣️ Sound detected (level: ${maxLevel}) - was silent for ${wasSilent}s, resetting timer`);
+        }
+        silenceStart = null;
+      } else {
+        // NO sound detected - count silence
+        if (!silenceStart) {
+          silenceStart = Date.now();
+          console.log(`🤐 No sound detected - starting 10-second silence timer`);
+        } else {
+          const silenceDuration = Date.now() - silenceStart;
+          const secondsSilent = (silenceDuration / 1000).toFixed(1);
+          
+          if (silenceDuration >= SILENCE_DURATION) {
+            console.log(`✅ 10 seconds of complete silence reached - stopping now`);
+            if (this.silenceCallback) {
+              this.silenceCallback();
+            }
+          } else {
+            // Log progress every 2 seconds
+            if (Math.floor(silenceDuration / 2000) > Math.floor((silenceDuration - CHECK_INTERVAL) / 2000)) {
+              console.log(`⏱️ Silence: ${secondsSilent}s / 10s`);
+            }
+          }
+        }
+      }
+    }, CHECK_INTERVAL);
   }
 
   onSilenceDetected(callback) {
